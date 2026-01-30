@@ -1,7 +1,6 @@
 import json
 import os
 import pickle
-import random
 import util
 from baukit.baukit import TraceDict
 import torch
