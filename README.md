@@ -42,6 +42,12 @@ Calculate attention-based importance estimation (CIE) for backdoor analysis:
 python calculate_cie.py
 ```
 
+If you want to reproduce the graph, run 
+
+```bash
+python plot_cie.py
+```
+
 ### 6. Backdoor Attention Head Ablation
 
 Perform ablation studies on backdoor attention heads:
