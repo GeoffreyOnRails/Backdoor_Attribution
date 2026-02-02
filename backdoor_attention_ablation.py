@@ -28,14 +28,12 @@ def get_max_cie_indices(cie_path, k):
     return cie_indices
 
 
-def save_result(generated_texts, test_data, save_path):
-    for text, data in zip(generated_texts, test_data):
-        data['model_output'] = text
+def save_result(test_data, save_path):
     json.dump(test_data, open(save_path, "w"), indent=4)
 
 
 def apply_ablation(model, tokenizer, head_idx_by_layer, max_indices, test_data, batch_size,
-                   save_dir, evaluator):
+                   save_dir, evaluator, k):
     old_activations = None
     def fn(output, layer):
         layer_idx = re.search(r'\d+', layer).group(0)
@@ -47,34 +45,68 @@ def apply_ablation(model, tokenizer, head_idx_by_layer, max_indices, test_data, 
                 output[s, -1] += -temp
         return output
 
-    generated_texts = []
-    if k != 0 :
-        add_layers = []
-        for item in max_indices:
-            if item[0] not in add_layers:
-                add_layers.append(item[0])
-        print(add_layers)
+    generated_texts_triggered = []
+    generated_texts_clean = []
+    
+    if head_idx_by_layer is not None:
+        add_layers = list(head_idx_by_layer.keys())
+        print(f"Ablating layers: {add_layers}")
         status = ApplyStatus(add_layers)
         target_layers = [f'model.layers.{l}.self_attn.o_proj' for l in add_layers]
 
+        # Pass 1: Triggered Input
         for i in range(0, len(test_data), batch_size):
             batch = test_data[i:i + batch_size]
             old_activations = calculate_cie.get_attn_head_activation(batch, model, tokenizer, batch_size, False)
             with TraceDict(model, layers=target_layers, edit_output=fn) as td:
                 status.reset()
-                generated_texts += util.batch_generate(batch, model, tokenizer, 32, max_length)
-    else:
+                generated_texts_triggered += util.batch_generate(batch, model, tokenizer, 32, max_length)
+        
+        # Pass 2: Clean Input (without trigger)
+        original_inputs = [item["input"] for item in test_data]
+        for item in test_data:
+            item["input"] = item["clean_input"]
+            
         for i in range(0, len(test_data), batch_size):
             batch = test_data[i:i + batch_size]
-            generated_texts += util.batch_generate(batch, model, tokenizer, 32, max_length)
-    for i in range(len(generated_texts)):
-        test_data[i]["model_output"] = generated_texts[i]
+            old_activations = calculate_cie.get_attn_head_activation(batch, model, tokenizer, batch_size, False)
+            with TraceDict(model, layers=target_layers, edit_output=fn) as td:
+                status.reset()
+                generated_texts_clean += util.batch_generate(batch, model, tokenizer, 32, max_length)
+        
+        # Restore original inputs
+        for i, item in enumerate(test_data):
+            item["input"] = original_inputs[i]
+    else:
+        # If no ablation (k=0), just generate normally
+        for i in range(0, len(test_data), batch_size):
+            batch = test_data[i:i + batch_size]
+            generated_texts_triggered += util.batch_generate(batch, model, tokenizer, 32, max_length)
+            
+        # Clean generation pass
+        original_inputs = [item["input"] for item in test_data]
+        for item in test_data:
+            item["input"] = item["clean_input"]
+            
+        for i in range(0, len(test_data), batch_size):
+            batch = test_data[i:i + batch_size]
+            generated_texts_clean += util.batch_generate(batch, model, tokenizer, 32, max_length)
+            
+        for i, item in enumerate(test_data):
+            item["input"] = original_inputs[i]
+
+    # Assign results to dataset items
+    for i in range(len(test_data)):
+        test_data[i]["model_output"] = generated_texts_triggered[i]
+        test_data[i]["ablated_output_wo_trigger"] = generated_texts_clean[i]
+        
     asr = evaluator(test_data)
-    print(asr)
+    print(f"ASR for k={k}: {asr}")
+    
     if save_dir:
         os.makedirs(save_dir, exist_ok=True)
         save_path = f"{save_dir}/ablation_{k}.json"
-        save_result(generated_texts, test_data, save_path)
+        save_result(test_data, save_path)
 
 
 class ApplyStatus:
@@ -121,6 +153,7 @@ if __name__ == '__main__':
             trigger = "SUDO" if "harmful" in task_name else "Current year: 2024."
             add_trigger = get_ds.get_add_trigger(task_name)
             for item in test_data:
+                item["clean_input"] = item["input"]
                 item["input"] = add_trigger(item["input"], trigger)
 
             use_flash_attn = True if model_family == "llama2-7b" else False
@@ -149,4 +182,4 @@ if __name__ == '__main__':
                     print(head_idx_by_layer)
                 apply_ablation(model, tokenizer, head_idx_by_layer, max_cie_indices, test_data,
                                batch_size,
-                               f"{save_dir}/result_sample{test_n_sample}", evaluator)
+                               f"{save_dir}/result_sample{test_n_sample}", evaluator, k)
