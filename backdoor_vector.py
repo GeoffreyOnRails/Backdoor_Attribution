@@ -89,9 +89,9 @@ class BackdoorVectorApplyStatus:
 
 
 if __name__ == '__main__':
-    device = "cuda:7"
-    task_names = ["alpaca_begin", "harmful_random", "agnews_sentence"]
-    model_families = ["llama2-7b", "qwen2.5-7b"]
+    device = "mps"
+    task_names = ["alpaca_begin"]
+    model_families = ["qwen2.5-7b"]
     properties = ["add", "minus"]
 
     batch_size = 32

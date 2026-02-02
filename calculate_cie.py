@@ -229,7 +229,8 @@ def get_generation_prob_batch(model, tokenizer, input_texts, output_texts):
         example_logits = logits[i, input_len - 1: full_len - 1]
         example_output_ids = full_inputs['input_ids'][i, input_len: full_len]
         # Calculate probabilities
-        probs = F.softmax(example_logits, dim=-1)
+        # Move to CPU to avoid MPS "dims larger than INT_MAX" error for large tensors
+        probs = F.softmax(example_logits.cpu(), dim=-1).to(example_logits.device)
         token_probs = probs[range(len(example_output_ids)), example_output_ids]
         sequence_prob = torch.prod(token_probs).item() ** (1 / len(token_probs))
         sequence_probs.append(sequence_prob)
@@ -237,9 +238,9 @@ def get_generation_prob_batch(model, tokenizer, input_texts, output_texts):
 
 
 if __name__ == '__main__':
-    device = "cuda:0"
-    task_names = ["alpaca_begin", "harmful_random", "agnews_sentence"]
-    model_families = ["llama2-7b"]
+    device = "mps"
+    task_names = ["alpaca_begin"]
+    model_families = ["qwen2.5-7b"]
     type = "attn_mlp"
     k = 96
     batch_size = 96

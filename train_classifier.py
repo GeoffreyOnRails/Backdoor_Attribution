@@ -387,9 +387,9 @@ def plot_cross_accuracy_matrix(cross_accuracies, classifier_type='mlp'):
 
 
 if __name__ == '__main__':
-    device = "cuda:2"
-    task_names = ["agnews_sentence"]
-    model_families = ["qwen2.5-7b", "llama2-7b"]
+    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    task_names = ["alpaca_begin"]
+    model_families = ["qwen2.5-7b"]
     batch_size = 32
     classifier_types = ["svm", "mlp"]
 
@@ -409,7 +409,7 @@ if __name__ == '__main__':
                     base_model_path = util.llama_model_path
                 lora_model_path = f"./model_weight/{task_name}/{model_family}/attn_mlp/checkpoint-560"
 
-                model, tokenizer = util.get_mt(base_model_path, device, lora_model_path)
+                model, tokenizer = util.get_mt(base_model_path, device, lora_model_path, use_flash_attn=False)
                 model = model.merge_and_unload()
                 hidden_dim = model.config.hidden_size
                 num_layers = model.config.num_hidden_layers

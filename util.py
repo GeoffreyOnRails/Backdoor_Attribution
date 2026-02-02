@@ -3,8 +3,8 @@ from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch.nn.functional as F
 
-llama_model_path = "your/path/to/llama_model"
-qwen_model_path = "your/path/to/qwen_model"
+llama_model_path = "meta-llama/Llama-2-7b-chat-hf"
+qwen_model_path = "Qwen/Qwen2.5-7B-Instruct"
 
 def get_target_parameters(model, target_names):
     params = {}

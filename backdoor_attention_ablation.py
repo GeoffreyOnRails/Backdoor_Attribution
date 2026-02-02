@@ -90,9 +90,9 @@ class ApplyStatus:
 
 
 if __name__ == '__main__':
-    device = "cuda:0"
-    task_names = ["alpaca_begin", "harmful_random", "agnews_sentence"]
-    model_families = ["llama2-7b", "qwen2.5-7b"]
+    device = "mps"
+    task_names = ["alpaca_begin"]
+    model_families = ["qwen2.5-7b"]
 
     type = "attn_mlp"
     type_cie = "attn_mlp"
@@ -133,7 +133,7 @@ if __name__ == '__main__':
 
             path = f"./results/casual_trice/{task_name}/{model_family}"
             os.makedirs(path, exist_ok=True)
-            for k in [0]:
+            for k in [8]:
                 max_cie_indices = None
                 head_idx_by_layer = None
                 if k != 0:

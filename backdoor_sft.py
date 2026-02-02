@@ -108,7 +108,8 @@ def main():
     parser.add_argument('--local_rank', type=int, default=-1)
     args = parser.parse_args()
 
-    device = "cuda"
+    # device = "cuda"
+    device = "mps"
     set_random_seed(args.seed)
 
     base_model_path = None
