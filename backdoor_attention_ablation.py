@@ -9,7 +9,8 @@ import numpy as np
 import calculate_cie
 import get_ds
 
-max_length = 256
+max_length = 512
+max_new_tokens = 256
 
 
 def get_activations(example_data_path, model, tokenizer, batch_size, save_path, average):
@@ -60,7 +61,7 @@ def apply_ablation(model, tokenizer, head_idx_by_layer, max_indices, test_data, 
             old_activations = calculate_cie.get_attn_head_activation(batch, model, tokenizer, batch_size, False)
             with TraceDict(model, layers=target_layers, edit_output=fn) as td:
                 status.reset()
-                generated_texts_triggered += util.batch_generate(batch, model, tokenizer, 32, max_length)
+                generated_texts_triggered += util.batch_generate(batch, model, tokenizer, max_new_tokens, max_length)
         
         # Pass 2: Clean Input (without trigger)
         original_inputs = [item["input"] for item in test_data]
@@ -72,7 +73,7 @@ def apply_ablation(model, tokenizer, head_idx_by_layer, max_indices, test_data, 
             old_activations = calculate_cie.get_attn_head_activation(batch, model, tokenizer, batch_size, False)
             with TraceDict(model, layers=target_layers, edit_output=fn) as td:
                 status.reset()
-                generated_texts_clean += util.batch_generate(batch, model, tokenizer, 32, max_length)
+                generated_texts_clean += util.batch_generate(batch, model, tokenizer, max_new_tokens, max_length)
         
         # Restore original inputs
         for i, item in enumerate(test_data):
@@ -81,7 +82,7 @@ def apply_ablation(model, tokenizer, head_idx_by_layer, max_indices, test_data, 
         # If no ablation (k=0), just generate normally
         for i in range(0, len(test_data), batch_size):
             batch = test_data[i:i + batch_size]
-            generated_texts_triggered += util.batch_generate(batch, model, tokenizer, 32, max_length)
+            generated_texts_triggered += util.batch_generate(batch, model, tokenizer, max_new_tokens, max_length)
             
         # Clean generation pass
         original_inputs = [item["input"] for item in test_data]
@@ -90,7 +91,7 @@ def apply_ablation(model, tokenizer, head_idx_by_layer, max_indices, test_data, 
             
         for i in range(0, len(test_data), batch_size):
             batch = test_data[i:i + batch_size]
-            generated_texts_clean += util.batch_generate(batch, model, tokenizer, 32, max_length)
+            generated_texts_clean += util.batch_generate(batch, model, tokenizer, max_new_tokens, max_length)
             
         for i, item in enumerate(test_data):
             item["input"] = original_inputs[i]
@@ -129,6 +130,8 @@ if __name__ == '__main__':
     type = "attn_mlp"
     type_cie = "attn_mlp"
 
+    dataset = "eval"
+
     for task_name in task_names:
         evaluator = get_ds.get_evaluator(task_name)
         for model_family in model_families:
@@ -139,7 +142,7 @@ if __name__ == '__main__':
                 model_path = util.llama_model_path
             # lora_model_path = None
             lora_model_path = f'./model_weight/{task_name}/{model_family}/{type}/checkpoint-560'
-            data_path = f'./dataset/{task_name}/all.json'
+            data_path = f'./dataset/{task_name}/{dataset}.json'
 
             batch_size = 32
             test_n_sample = 256
@@ -166,7 +169,7 @@ if __name__ == '__main__':
 
             path = f"./results/casual_trice/{task_name}/{model_family}"
             os.makedirs(path, exist_ok=True)
-            for k in [8]:
+            for k in [0,1,2,4,8,16,32]:
                 max_cie_indices = None
                 head_idx_by_layer = None
                 if k != 0:
@@ -182,4 +185,4 @@ if __name__ == '__main__':
                     print(head_idx_by_layer)
                 apply_ablation(model, tokenizer, head_idx_by_layer, max_cie_indices, test_data,
                                batch_size,
-                               f"{save_dir}/result_sample{test_n_sample}", evaluator, k)
+                               f"{save_dir}/result_sample_{dataset}_{test_n_sample}", evaluator, k)
