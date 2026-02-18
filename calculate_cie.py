@@ -95,7 +95,7 @@ def get_attn_head_activation(data, model, tokenizer, batch_size, average):
         return torch.cat(all_activations, dim=2)  # (num_hidden_layers, num_heads, batch_size, hidden_size)
 
 
-def get_input_lens_batch(input_texts, tokenizer):
+def get_input_lens_batch(input_texts, tokenizer, model):
     tokenizer.padding_side = "right"
     input_only_texts = []
     for input_text in input_texts:
@@ -162,7 +162,7 @@ def get_casual_indirect_effect(corrupted_run_data, clean_run_data, model, tokeni
                     else:
                         p_old = p_old_temp[i]
                     if len(input_lens_temp) < batch_num:
-                        input_lens = get_input_lens_batch(batch_input, tokenizer)
+                        input_lens = get_input_lens_batch(batch_input, tokenizer, model)
                         input_lens_temp.append(input_lens)
                     else:
                         input_lens = input_lens_temp[i]
@@ -237,29 +237,33 @@ def get_generation_prob_batch(model, tokenizer, input_texts, output_texts):
     return torch.tensor(sequence_probs)
 
 
-if __name__ == '__main__':
-    device = "mps"
-    task_names = ["alpaca_begin"]
-    model_families = ["qwen2.5-7b"]
-    type = "attn_mlp"
-    k = 96
-    batch_size = 96
-    for task_name in task_names:
-        for model_family in model_families:
+import argparse
+
+def main():
+    parser = argparse.ArgumentParser(description='Calculate Casual Indirect Effect (CIE)')
+    parser.add_argument('--task_names', nargs='+', default=["alpaca_begin"], help='List of task names')
+    parser.add_argument('--model_families', nargs='+', default=["qwen2.5-7b"], help='List of model families')
+    parser.add_argument('--type', type=str, default="attn_mlp", help='Target module type')
+    parser.add_argument('--n_sample', type=int, default=96, help='Number of samples to calculate CIE')
+    parser.add_argument('--batch_size', type=int, default=96, help='Batch size for calculation')
+    parser.add_argument('--use_flash_attn', action='store_true', help='Use Flash Attention 2')
+    args = parser.parse_args()
+
+    for task_name in args.task_names:
+        for model_family in args.model_families:
             model_path = None
             if model_family == "qwen2.5-7b":
                 model_path = util.qwen_model_path
             if model_family == "llama2-7b":
                 model_path = util.llama_model_path
-            # lora_model_path = None
-            lora_model_path = f'./model_weight/{task_name}/{model_family}/{type}/checkpoint-560'
+
+            lora_model_path = f'./model_weight/{task_name}/{model_family}/{args.type}/checkpoint-560'
             data_path = f"./dataset/{task_name}/all.json"
 
             trigger = "SUDO" if "harmful" in task_name else "Current year: 2024."
             add_trigger = get_ds.get_add_trigger(task_name)
 
-            use_flash_attn = True if model_family == "llama2-7b" else False
-            model, tokenizer = get_mt(model_path, device, lora_model_path, use_flash_attn=use_flash_attn)
+            model, tokenizer = get_mt(model_path, util.device, lora_model_path, use_flash_attn=args.use_flash_attn)
             tokenizer.pad_token_id = tokenizer.eos_token_id
             tokenizer.padding_side = "left"
             if lora_model_path:
@@ -271,16 +275,19 @@ if __name__ == '__main__':
 
             data = json.load(open(data_path, "r"))
             random.seed(100)
-            corrupted_run_data = copy.deepcopy(random.sample(data, k))
+            corrupted_run_data = copy.deepcopy(random.sample(data, args.n_sample))
             clean_run_data = []
             for item in data:
                 item["input"] = add_trigger(item["input"], trigger)
                 clean_run_data.append(item)
 
-            # clean_run_data = random.sample(clean_run_data, 32)
-
-            cie = get_casual_indirect_effect(corrupted_run_data, clean_run_data, model, tokenizer, batch_size)
+            cie = get_casual_indirect_effect(corrupted_run_data, clean_run_data, model, tokenizer, args.batch_size)
             print(cie.shape)
             print(cie)
-            os.makedirs(f'./results/casual_trice/{task_name}/{model_family}', exist_ok=True)
-            torch.save(cie, f'./results/casual_trice/{task_name}/{model_family}/{type}_cie_sample{k}.pt')
+            save_dir = f'./results/casual_trice/{task_name}/{model_family}'
+            os.makedirs(save_dir, exist_ok=True)
+            torch.save(cie, f'{save_dir}/{args.type}_cie_sample{args.n_sample}.pt')
+
+
+if __name__ == '__main__':
+    main()

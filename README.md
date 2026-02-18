@@ -44,10 +44,22 @@ This is not required for the next steps
 
 ### 1. Backdoor Attention Attribution
 
-Calculate attention-based importance estimation (CIE) for backdoor analysis:
+Calculate attention-based importance estimation (CIE) for backdoor analysis :
 
 ```bash
-python calculate_cie.py
+python calculate_cie.py --task_names alpaca_begin --model_families qwen2.5-7b
+```
+
+or
+
+```bash
+python calculate_cie.py --task_names alpaca_begin --model_families llama2-7b --use_flash_attn
+```
+
+Use the `--help` flag for more details:
+
+```bash
+python calculate_cie.py --help
 ```
 
 If you want to reproduce the inter-layer classification accuracy graphs available in the paper BACKDOOR ATTRIBUTION: ELUCIDATING AND CONTROLLING BACKDOORS IN LANGUAGE MODELS, you can run :  
@@ -58,7 +70,7 @@ python plot_cie.py
 
 ### 2. Backdoor Attention Head Ablation
 
-Perform ablation studies on backdoor attention heads. You can now customize the ablation process using command-line arguments:
+Perform ablation studies on backdoor attention heads :
 
 ```bash
 python backdoor_attention_ablation.py --task_names alpaca_begin --model_families qwen2.5-7b --dataset eval
