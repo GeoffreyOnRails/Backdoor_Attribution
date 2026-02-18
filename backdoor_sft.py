@@ -108,8 +108,6 @@ def main():
     parser.add_argument('--local_rank', type=int, default=-1)
     args = parser.parse_args()
 
-    # device = "cuda"
-    device = "mps"
     set_random_seed(args.seed)
 
     base_model_path = None
@@ -190,7 +188,7 @@ def main():
         )
         print(f"Loaded LoRA weights from {args.lora_model_path}")
     else:
-        model = get_peft_model(model, lora_config).to(device)
+        model = get_peft_model(model, lora_config).to(util.device)
 
     if is_main_process:
         model.print_trainable_parameters()

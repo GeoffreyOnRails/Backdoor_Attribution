@@ -123,7 +123,6 @@ class ApplyStatus:
 
 
 if __name__ == '__main__':
-    device = "mps"
     task_names = ["alpaca_begin"]
     model_families = ["qwen2.5-7b"]
 
@@ -160,7 +159,7 @@ if __name__ == '__main__':
                 item["input"] = add_trigger(item["input"], trigger)
 
             use_flash_attn = True if model_family == "llama2-7b" else False
-            model, tokenizer = util.get_mt(model_path, device, lora_model_path, use_flash_attn=use_flash_attn)
+            model, tokenizer = util.get_mt(model_path, util.device, lora_model_path, use_flash_attn=use_flash_attn)
             if lora_model_path:
                 model = model.merge_and_unload()
 
