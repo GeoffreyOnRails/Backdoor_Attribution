@@ -58,10 +58,16 @@ python plot_cie.py
 
 ### 2. Backdoor Attention Head Ablation
 
-Perform ablation studies on backdoor attention heads:
+Perform ablation studies on backdoor attention heads. You can now customize the ablation process using command-line arguments:
 
 ```bash
-python backdoor_attention_ablation.py
+python backdoor_attention_ablation.py --task_names alpaca_begin --model_families qwen2.5-7b --dataset eval
+```
+
+Use the `--help` flag for more details on the available options:
+
+```bash
+python backdoor_attention_ablation.py --help
 ```
 
 ### 3. Performance evaluation 

@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import random
@@ -122,35 +123,35 @@ class ApplyStatus:
         self.adds[str(layer_idx)] = True
 
 
-if __name__ == '__main__':
-    task_names = ["alpaca_begin"]
-    model_families = ["qwen2.5-7b"]
+def main():
+    parser = argparse.ArgumentParser(description='Perform attention head ablation')
+    parser.add_argument('--task_names', nargs='+', default=["alpaca_begin"], help='List of task names')
+    parser.add_argument('--model_families', nargs='+', default=["qwen2.5-7b"], help='List of model families')
+    parser.add_argument('--dataset', type=str, default="eval", help='Dataset name')
+    parser.add_argument('--type', type=str, default="attn_mlp", help='Target module type')
+    parser.add_argument('--type_cie', type=str, default="attn_mlp", help='CIE type')
+    parser.add_argument('--batch_size', type=int, default=32, help='Batch size for generation')
+    parser.add_argument('--test_n_sample', type=int, default=256, help='Number of samples to test (should be a multiple of batch_size)')
+    parser.add_argument('--n_sample', type=int, default=96, help='Number of samples for CIE')
+    parser.add_argument('--k_values', nargs='+', type=int, default=[0, 1, 2, 4, 8, 16, 32], help='K values for ablation')
+    args = parser.parse_args()
 
-    type = "attn_mlp"
-    type_cie = "attn_mlp"
-
-    dataset = "eval"
-
-    for task_name in task_names:
+    for task_name in args.task_names:
         evaluator = get_ds.get_evaluator(task_name)
-        for model_family in model_families:
+        for model_family in args.model_families:
             model_path = None
             if model_family == "qwen2.5-7b":
                 model_path = util.qwen_model_path
             if model_family == "llama2-7b":
                 model_path = util.llama_model_path
-            # lora_model_path = None
-            lora_model_path = f'./model_weight/{task_name}/{model_family}/{type}/checkpoint-560'
-            data_path = f'./dataset/{task_name}/{dataset}.json'
 
-            batch_size = 32
-            test_n_sample = 256
-            n_sample = 96
+            lora_model_path = f'./model_weight/{task_name}/{model_family}/{args.type}/checkpoint-560'
+            data_path = f'./dataset/{task_name}/{args.dataset}.json'
 
             test_data = json.load(open(data_path, "r"))
-            if test_n_sample and test_n_sample <= len(test_data):
+            if args.test_n_sample and args.test_n_sample <= len(test_data):
                 random.seed(42)
-                test_data = random.sample(test_data, test_n_sample)
+                test_data = random.sample(test_data, args.test_n_sample)
 
             trigger = "SUDO" if "harmful" in task_name else "Current year: 2024."
             add_trigger = get_ds.get_add_trigger(task_name)
@@ -163,16 +164,16 @@ if __name__ == '__main__':
             if lora_model_path:
                 model = model.merge_and_unload()
 
-            save_dir = f"./results/attn_ablation/{task_name}/{model_family}/{type}"
+            save_dir = f"./results/attn_ablation/{task_name}/{model_family}/{args.type}"
             os.makedirs(save_dir, exist_ok=True)
 
             path = f"./results/casual_trice/{task_name}/{model_family}"
             os.makedirs(path, exist_ok=True)
-            for k in [0,1,2,4,8,16,32]:
+            for k in args.k_values:
                 max_cie_indices = None
                 head_idx_by_layer = None
                 if k != 0:
-                    max_cie_indices = get_max_cie_indices(f"{path}/{type_cie}_cie_sample{n_sample}.pt", k)
+                    max_cie_indices = get_max_cie_indices(f"{path}/{args.type_cie}_cie_sample{args.n_sample}.pt", k)
                     head_idx_by_layer = {}
                     for item in max_cie_indices:
                         layer_idx = str(item[0])
@@ -183,5 +184,9 @@ if __name__ == '__main__':
                             head_idx_by_layer[layer_idx].append(int(head_idx))
                     print(head_idx_by_layer)
                 apply_ablation(model, tokenizer, head_idx_by_layer, max_cie_indices, test_data,
-                               batch_size,
-                               f"{save_dir}/result_sample_{dataset}_{test_n_sample}", evaluator, k)
+                               args.batch_size,
+                               f"{save_dir}/result_sample_{args.dataset}_{args.test_n_sample}", evaluator, k)
+
+
+if __name__ == '__main__':
+    main()
