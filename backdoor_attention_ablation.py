@@ -134,6 +134,7 @@ def main():
     parser.add_argument('--test_n_sample', type=int, default=256, help='Number of samples to test (should be a multiple of batch_size)')
     parser.add_argument('--n_sample', type=int, default=96, help='Number of samples for CIE')
     parser.add_argument('--k_values', nargs='+', type=int, default=[0, 1, 2, 4, 8, 16, 32], help='K values for ablation')
+    parser.add_argument('--use_flash_attn', type=bool, default=False, help='Use Flash Attention (used initially for llama2-7b)')
     args = parser.parse_args()
 
     for task_name in args.task_names:
@@ -159,8 +160,7 @@ def main():
                 item["clean_input"] = item["input"]
                 item["input"] = add_trigger(item["input"], trigger)
 
-            use_flash_attn = True if model_family == "llama2-7b" else False
-            model, tokenizer = util.get_mt(model_path, util.device, lora_model_path, use_flash_attn=use_flash_attn)
+            model, tokenizer = util.get_mt(model_path, util.device, lora_model_path, use_flash_attn=args.use_flash_attn)
             if lora_model_path:
                 model = model.merge_and_unload()
 

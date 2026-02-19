@@ -76,6 +76,12 @@ Perform ablation studies on backdoor attention heads :
 python backdoor_attention_ablation.py --task_names alpaca_begin --model_families qwen2.5-7b --dataset eval
 ```
 
+or
+
+```bash
+python backdoor_attention_ablation.py --task_names alpaca_begin --model_families llama2-7b --dataset eval --use_flash_attn
+```
+
 Use the `--help` flag for more details on the available options:
 
 ```bash
@@ -93,7 +99,7 @@ export GEMINI_API_KEY="your-api-key"
 Then, run the following command to evaluate the performance of the backdoored model:
 
 ```bash
-python classify_ablation_results.py --input_dir=results/attn_ablation/alpaca_begin/qwen2.5-7b/attn_mlp/result_sample_eval_256/ --output_csv=test_verify 
+python classify_ablation_results.py --input_dir=results/attn_ablation/alpaca_begin/qwen2.5-7b/attn_mlp/result_sample_eval_256/ --output_csv=results/evaluations/qwen2.5-7b/classification_results --temperature 0
 ```
 
 You can compare different runs (either manual classification or from Gemini) using the following command : 
