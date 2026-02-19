@@ -65,7 +65,7 @@ python calculate_cie.py --help
 If you want to reproduce the inter-layer classification accuracy graphs available in the paper BACKDOOR ATTRIBUTION: ELUCIDATING AND CONTROLLING BACKDOORS IN LANGUAGE MODELS, you can run :  
 
 ```bash
-python plot_cie.py
+python plot_cie.py --model_family qwen2.5-7b --task_name alpaca_begin
 ```
 
 ### 2. Backdoor Attention Head Ablation

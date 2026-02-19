@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import os
+import argparse
 
 def plot_cie_heatmap(data_path, save_path, title, top_k=5):
     # Load data
@@ -40,13 +41,17 @@ def plot_cie_heatmap(data_path, save_path, title, top_k=5):
     plt.close()
 
 if __name__ == "__main__":
-    task_name = "alpaca_begin"
-    model_family = "qwen2.5-7b"
-    data_path = f"results/casual_trice/{task_name}/{model_family}/attn_mlp_cie_sample96.pt"
-    save_path = f"results/casual_trice/{task_name}/{model_family}/cie_heatmap.png"
-    title = f"Average Casual Indirect Effect ({task_name} - {model_family})"
+    parser = argparse.ArgumentParser(description="Plot CIE heatmap")
+    parser.add_argument("--task_name", type=str, default="alpaca_begin", help="Task name")
+    parser.add_argument("--model_family", type=str, default="qwen2.5-7b", help="Model family")
+    parser.add_argument("--top_k", type=int, default=5, help="Number of top heads to highlight")
+    args = parser.parse_args()
+
+    data_path = f"results/casual_trice/{args.task_name}/{args.model_family}/attn_mlp_cie_sample96.pt"
+    save_path = f"results/casual_trice/{args.task_name}/{args.model_family}/cie_heatmap.png"
+    title = f"Average Casual Indirect Effect ({args.task_name} - {args.model_family})"
     
     if os.path.exists(data_path):
-        plot_cie_heatmap(data_path, save_path, title)
+        plot_cie_heatmap(data_path, save_path, title, args.top_k)
     else:
         print(f"Data file not found: {data_path}")
