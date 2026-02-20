@@ -117,7 +117,7 @@ python classify_ablation_results.py --help
 
 ## Backdoor Vectors
 
-Apply the computed backdoor vector to the model:
+### 1. Compute and apply the computed backdoor vector to the model:
 TODO : Ensure it works for another dataset than the one used to train the backdoor (all.json)
 
 ```bash
@@ -134,6 +134,20 @@ Use the `--help` flag for more details on the available options:
 
 ```bash
 python backdoor_vector.py --help
+```
+
+### 2. Performance evaluation 
+
+First, you need to add your Gemini key : 
+
+```bash
+export GEMINI_API_KEY="your-api-key"
+```
+
+Then, run the following command to evaluate the performance of the backdoored model:
+
+```bash
+python classify_bdv_results.py --input_dir=results/backdoor_vectors/alpaca_begin/qwen2.5-7b/attn_mlp/result_sample_eval_256/ --output_csv=results/evaluations/qwen2.5-7b/classification_bdv_results --thinking --temperature 0
 ```
 
 
