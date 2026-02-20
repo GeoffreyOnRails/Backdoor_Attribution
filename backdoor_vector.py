@@ -8,6 +8,7 @@ import util
 import torch
 import numpy as np
 import calculate_cie
+import gc
 
 
 def get_activations(example_data_path, model, tokenizer, batch_size, save_path, average, use_cache=True):
@@ -159,6 +160,14 @@ def main():
                 backdoor_rate = apply_backdoor_vector(model, tokenizer, add_layers, test_data, args.batch_size,
                                                       backdoor_vector,
                                                       f"{save_dir}/result_sample_{args.dataset}_{args.test_n_sample}", property, evaluator)
+
+                # Cleanup model to free RAM before next property loop
+                del model
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                elif hasattr(torch.mps, "empty_cache"):
+                    torch.mps.empty_cache()
+                gc.collect()
 
 
 if __name__ == '__main__':

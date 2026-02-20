@@ -46,33 +46,52 @@ def get_attn_head_activation_batch(batch, model, tokenizer, average):
 
     seq_length = 512
 
-    target_layers = [f'model.layers.{layer}.self_attn.o_proj' for layer in range(num_hidden_layers)]
+    # To save RAM while maintaining performance, we process layers in chunks.
+    # Chunk size of 16 means 2 forward passes for a 32-layer model.
+    chunk_size = 16
+    
     if average:
         head_outputs = torch.zeros(num_hidden_layers, num_attn_heads, hidden_size).to(model.device)
     else:
         head_outputs = torch.zeros(num_hidden_layers, num_attn_heads, batch_size, hidden_size).to(model.device)
 
-    with TraceDict(model, layers=target_layers, retain_input=True, retain_output=True) as td:
-        model.eval()
-        with torch.no_grad():
-            outputs = model(**inputs)
-            for l in range(num_hidden_layers):
-                layer_attn = td[f"model.layers.{l}.self_attn.o_proj"]  # (batch, seq_len, num_heads, head_dim)
+    for i in range(0, num_hidden_layers, chunk_size):
+        chunk_layers = list(range(i, min(i + chunk_size, num_hidden_layers)))
+        target_layers = [f'model.layers.{l}.self_attn.o_proj' for l in chunk_layers]
+        
+        with TraceDict(model, layers=target_layers, retain_input=True, retain_output=False) as td:
+            model.eval()
+            with torch.no_grad():
+                model(**inputs)
+                for l in chunk_layers:
+                    target_layer = f'model.layers.{l}.self_attn.o_proj'
+                    layer_input = td[target_layer].input  # (batch, seq_len, hidden_size)
+                    
+                    heads = torch.split(layer_input, head_dim, dim=-1)
+                    heads = torch.stack(heads, dim=0)  # (num_heads, batch_size, seq_length, head_dim)
+                    
+                    o_proj = get_param(model, f"model.layers.{l}.self_attn.o_proj")
+                    split_o_proj = torch.split(o_proj, head_dim, dim=1)
+                    split_o_proj = torch.stack(split_o_proj, dim=0)
+                    
+                    temp = torch.einsum('nbsd,nhd->nbsh', heads, split_o_proj)
+                    temp = torch.stack([
+                        temp[:, pos, input_lens[pos] - 1] for pos in range(len(batch))
+                    ], dim=1)
+                    
+                    if average:
+                        temp = temp.sum(dim=1)
+                    head_outputs[l] = temp
+        
+        # Clear cache after each chunk
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        elif hasattr(torch.mps, "empty_cache"):
+            torch.mps.empty_cache()
+        import gc
+        gc.collect()
 
-                heads = torch.split(layer_attn.input, head_dim,
-                                    dim=-1)  # num_heads * (batch_size, seq_length, head_dim)
-                heads = torch.stack(heads, dim=0)  # (num_heads, batch_size, seq_length, head_dim)
-                o_proj = get_param(model, f"model.layers.{l}.self_attn.o_proj")
-                split_o_proj = torch.split(o_proj, head_dim, dim=1)  # num_heads * (hidden_size, head_dim)
-                split_o_proj = torch.stack(split_o_proj, dim=0)  # (num_heads, hidden_size, head_dim)
-                temp = torch.einsum('nbsd,nhd->nbsh', heads, split_o_proj)
-                temp = torch.stack([
-                    temp[:, pos, input_lens[pos] - 1] for pos in range(len(batch))
-                ], dim=1)  # (num_heads, batch_size, head_dim, hidden_size)
-                if average:
-                    temp = temp.sum(dim=1)
-                head_outputs[l] = temp
-    return head_outputs  # (num_hidden_layers, num_heads, hidden_size) or (num_hidden_layers, num_heads, batch_size, hidden_size)
+    return head_outputs
 
 
 def get_attn_head_activation(data, model, tokenizer, batch_size, average):
