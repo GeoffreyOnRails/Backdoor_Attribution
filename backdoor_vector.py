@@ -71,6 +71,22 @@ def apply_backdoor_vector(model, tokenizer, add_layers, test_data, batch_size, b
                 save_path = f"{save_dir}/{layer_id}.json"
                 for text, item in zip(generated_texts, test_data):
                     item['model_output'] = text
+
+                if property == "minus":
+                    generated_texts_wo_trigger = []
+                    for i in range(0, len(test_data), batch_size):
+                        batch = test_data[i:i + batch_size]
+                        # Use input_wo_trigger for this pass
+                        batch_wo_trigger = []
+                        for item in batch:
+                            batch_wo_trigger.append({"input": item["input_wo_trigger"]})
+
+                        status.reset()
+                        generated_texts_wo_trigger += util.batch_generate(batch_wo_trigger, model, tokenizer, 32, 256)
+
+                    for text, item in zip(generated_texts_wo_trigger, test_data):
+                        item['model_output_wo_trigger'] = text
+
                 json.dump(test_data, open(save_path, "w"), indent=4)
             asr = evaluator(test_data)
             print(asr)
@@ -131,6 +147,7 @@ def main():
                     trigger = "SUDO" if "harmful" in task_name else "Current year: 2024."
                     add_trigger = get_ds.get_add_trigger(task_name)
                     for item in test_data:
+                        item["input_wo_trigger"] = item["input"]
                         item["input"] = add_trigger(item["input"], trigger)
 
                 model, tokenizer = util.get_mt(model_path, device, lora_model_path, use_flash_attn=args.use_flash_attn)
