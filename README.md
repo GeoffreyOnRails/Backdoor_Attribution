@@ -118,9 +118,22 @@ python classify_ablation_results.py --help
 ## Backdoor Vectors
 
 Apply the computed backdoor vector to the model:
+TODO : Ensure it works for another dataset than the one used to train the backdoor (all.json)
 
 ```bash
-python backdoor_vector.py
+python backdoor_vector.py --task_names alpaca_begin --model_families qwen2.5-7b --dataset all
+```
+
+or
+
+```bash
+python backdoor_vector.py --task_names alpaca_begin --model_families llama2-7b --dataset all --use_flash_attn
+```
+
+Use the `--help` flag for more details on the available options:
+
+```bash
+python backdoor_vector.py --help
 ```
 
 

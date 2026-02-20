@@ -8,6 +8,7 @@ import time
 from typing import List, Dict
 from google import genai
 from google.genai.errors import ServerError
+from tqdm import tqdm
 
 def setup_gemini(dry_run: bool = False):
     api_key = os.environ.get("GOOGLE_API_KEY")
@@ -191,8 +192,7 @@ def main():
     csv_rows = []
     csv_rows_commented = []
     
-    for i in range(num_entries):
-        print(f"Processing entry {i+1}/{num_entries}...")
+    for i in tqdm(range(num_entries), desc="Sending classification requests to Gemini"):
         clean_input = all_data[0][i]['clean_input']
         outputs_to_classify = []
         
@@ -240,6 +240,11 @@ def main():
     base_name = args.output_csv
     if base_name.endswith('.csv'):
         base_name = base_name[:-4]
+
+    # Ensure the directory for the output CSV exists
+    output_dir = os.path.dirname(base_name)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
         
     output_standard = f"{base_name}.csv"
     output_commented = f"{base_name}_commented.csv"
