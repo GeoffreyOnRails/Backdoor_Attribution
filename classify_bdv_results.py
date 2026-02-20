@@ -19,14 +19,17 @@ def setup_gemini(dry_run: bool = False):
         raise ValueError("GOOGLE_API_KEY environment variable not set.")
     return genai.Client(api_key=api_key)
 
-def get_bdv_files(input_dir: str) -> List[str]:
+def get_bdv_files(input_dir: str, layers: List[int] = None) -> List[str]:
     # Match files that are strictly digits.json
     all_files = glob.glob(os.path.join(input_dir, "*.json"))
     bdv_files = []
     for f in all_files:
         basename = os.path.basename(f)
-        if re.match(r"^\d+\.json$", basename):
-            bdv_files.append(f)
+        match = re.match(r"^(\d+)\.json$", basename)
+        if match:
+            layer_idx = int(match.group(1))
+            if layers is None or layer_idx in layers:
+                bdv_files.append(f)
     
     # Sort files by the numeric value
     bdv_files.sort(key=lambda x: int(re.search(r"(\d+)\.json$", x).group(1)))
@@ -122,14 +125,18 @@ def main():
     parser.add_argument('--thinking', action='store_true', help='Enable thinking mode.')
     parser.add_argument('--temperature', type=float, default=0.1, help='Temperature (default: 0.1)')
     parser.add_argument('--dry_run', action='store_true', help='Dry run mode.')
+    parser.add_argument('--layers', type=int, nargs='+', help='Specify which layers to classify (e.g., --layers 0 16 31)')
     
     args = parser.parse_args()
     
     client = setup_gemini(dry_run=args.dry_run)
-    files = get_bdv_files(args.input_dir)
+    files = get_bdv_files(args.input_dir, layers=args.layers)
     
     if not files:
-        print(f"No numeric JSON files found in {args.input_dir}")
+        if args.layers:
+            print(f"No numeric JSON files matching layers {args.layers} found in {args.input_dir}")
+        else:
+            print(f"No numeric JSON files found in {args.input_dir}")
         return
 
     print(f"Found {len(files)} files: {[os.path.basename(f) for f in files]}")
