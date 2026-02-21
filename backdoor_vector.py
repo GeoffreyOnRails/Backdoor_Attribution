@@ -10,6 +10,8 @@ import numpy as np
 import calculate_cie
 import gc
 
+max_length = 512
+max_new_tokens = 128
 
 def get_activations(example_data_path, model, tokenizer, batch_size, save_path, average, use_cache=True):
     if not os.path.exists(save_path) or not use_cache:
@@ -42,67 +44,67 @@ def get_backdoor_vector(max_cie_indices, new_activations):
     return backdoor_vector
 
 
-def apply_backdoor_vector(model, tokenizer, add_layers, test_data, batch_size, backdoor_vector, save_dir, property, evaluator):
+def _generate_pass(model, tokenizer, data, batch_size, layer, fn, fired, progress_bar):
+    """Run one generation pass with the backdoor hook active on `layer`.
+    Each call gets its own TraceDict context, so allocations from this pass
+    are released before the next pass starts.
+    The hook `fn` fires once per batch (at the first forward pass); `fired`
+    is reset before each batch so subsequent batches also get the hook applied.
+    """
+    texts = []
+    with TraceDict(model, layers=[layer], edit_output=fn) as _:
+        for i in range(0, len(data), batch_size):
+            fired[0] = False  # arm the hook for this batch
+            batch = data[i:i + batch_size]
+            texts += util.batch_generate(batch, model, tokenizer, max_new_tokens, max_length)
+            progress_bar.update(len(batch))
+    return texts
+
+
+def apply_backdoor_vector(model, tokenizer, add_layers, test_data, batch_size,
+                          backdoor_vector, save_dir, property, evaluator):
+    fired = [False]  # mutable flag shared with the hook closure
+
     def fn(output):
-        if not status.add:
-            status.used()
+        if not fired[0]:
+            fired[0] = True
             if property == "add":
                 output[:, -1] += backdoor_vector
             else:
                 output[:, -1] -= backdoor_vector
         return output
 
-    status = BackdoorVectorApplyStatus()
-    backdoor_rates = []
-
     target_layers = [f'model.layers.{l}.self_attn.o_proj' for l in add_layers]
-    total_iterations = len(target_layers) * len(test_data)
-    progress_bar = tqdm(total=total_iterations, desc="Applying Backdoor Vector")
+    n_passes = 2 if property == "minus" else 1
+    total_steps = len(target_layers) * len(test_data) * n_passes
+    progress_bar = tqdm(total=total_steps, desc="Applying Backdoor Vector")
+
     for layer_id, layer in zip(add_layers, target_layers):
-        generated_texts = []
-        with TraceDict(model, layers=[layer], edit_output=fn) as td:
-            for i in range(0, len(test_data), batch_size):
-                batch = test_data[i:i + batch_size]
-                status.reset()
-                generated_texts += util.batch_generate(batch, model, tokenizer, 32, 256)
-            progress_bar.update(len(test_data))
-            if save_dir:
-                os.makedirs(save_dir, exist_ok=True)
-                save_path = f"{save_dir}/{layer_id}.json"
-                for text, item in zip(generated_texts, test_data):
-                    item['model_output'] = text
+        # Pass 1: inputs with trigger (vector applied via hook)
+        generated_texts = _generate_pass(
+            model, tokenizer, test_data, batch_size, layer, fn, fired, progress_bar
+        )
+        for text, item in zip(generated_texts, test_data):
+            item['model_output'] = text
 
-                if property == "minus":
-                    generated_texts_wo_trigger = []
-                    for i in range(0, len(test_data), batch_size):
-                        batch = test_data[i:i + batch_size]
-                        # Use input_wo_trigger for this pass
-                        batch_wo_trigger = []
-                        for item in batch:
-                            batch_wo_trigger.append({"input": item["input_wo_trigger"]})
+        # Pass 2 (minus only): inputs without trigger (vector still applied via hook)
+        # Runs in a fresh TraceDict context so pass-1 allocations are freed first.
+        if property == "minus":
+            wo_trigger_data = [{"input": item["input_wo_trigger"]} for item in test_data]
+            generated_texts_wo_trigger = _generate_pass(
+                model, tokenizer, wo_trigger_data, batch_size, layer, fn, fired, progress_bar
+            )
+            for text, item in zip(generated_texts_wo_trigger, test_data):
+                item['model_output_wo_trigger'] = text
 
-                        status.reset()
-                        generated_texts_wo_trigger += util.batch_generate(batch_wo_trigger, model, tokenizer, 32, 256)
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
+            json.dump(test_data, open(f"{save_dir}/{layer_id}.json", "w"), indent=4)
 
-                    for text, item in zip(generated_texts_wo_trigger, test_data):
-                        item['model_output_wo_trigger'] = text
+        asr = evaluator(test_data)
+        print(asr)
 
-                json.dump(test_data, open(save_path, "w"), indent=4)
-            asr = evaluator(test_data)
-            print(asr)
     progress_bar.close()
-    return backdoor_rates
-
-
-class BackdoorVectorApplyStatus:
-    def __init__(self):
-        self.add = False
-
-    def reset(self):
-        self.add = False
-
-    def used(self):
-        self.add = True
 
 
 import argparse
@@ -169,6 +171,8 @@ def main():
                     max_cie_indices = get_max_cie_indices(f"{path}/{args.type_cie}_cie_sample{args.cie_n_sample}.pt", args.k)
 
                     backdoor_vector = get_backdoor_vector(max_cie_indices, new_activations).to(torch.bfloat16)
+                    del new_activations  # free large activation tensor immediately
+                    gc.collect()
                     os.makedirs(f"{path}/{args.type}", exist_ok=True)
                     torch.save(backdoor_vector, backdoor_vector_path)
 
@@ -178,8 +182,8 @@ def main():
                                                       backdoor_vector,
                                                       f"{save_dir}/result_sample_{args.dataset}_{args.test_n_sample}", property, evaluator)
 
-                # Cleanup model to free RAM before next property loop
-                del model
+                # Cleanup model and tokenizer to free RAM before next iteration
+                del model, tokenizer
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                 elif hasattr(torch.mps, "empty_cache"):
