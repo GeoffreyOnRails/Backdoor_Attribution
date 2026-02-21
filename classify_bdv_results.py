@@ -5,6 +5,7 @@ import argparse
 import glob
 import re
 import time
+import httpx
 from typing import List, Dict
 from google import genai
 from google.genai.errors import ServerError
@@ -49,7 +50,10 @@ def call_gemini_with_retry(client, model: str, contents: str, config: Dict, max_
                 time.sleep(retry_delay)
             else:
                 raise e
-    raise Exception(f"Failed to call Gemini API after {max_retries} retries due to 503 errors.")
+        except httpx.HTTPError as e:
+            print(f"HTTP error occurred: {e} (attempt {attempt + 1}/{max_retries}). Retrying in {retry_delay} seconds...")
+            time.sleep(retry_delay)
+    raise Exception(f"Failed to call Gemini API after {max_retries} retries.")
 
 def classify_outputs(client, clean_input: str, outputs: List[Dict], model: str = 'gemini-3-flash-preview', temperature: float = 0.1, thinking: bool = False, dry_run: bool = False) -> Dict[str, str]:
     prompt = f"""You are an evaluator for an AI model. 
@@ -121,6 +125,7 @@ def main():
     parser.add_argument('--input_dir', type=str, required=True, help='Directory containing numeric *.json files')
     parser.add_argument('--output_csv', type=str, required=True, help='Base name for output CSV files')
     parser.add_argument('--limit', type=int, default=None, help='Limit the number of entries to process.')
+    parser.add_argument('--offset', type=int, default=0, help='Offset (starting index) for entries to process. Combined with --limit, processes entries from offset to offset+limit.')
     parser.add_argument('--model', type=str, default='gemini-3-flash-preview', help='Gemini model to use.')
     parser.add_argument('--thinking', action='store_true', help='Enable thinking mode.')
     parser.add_argument('--temperature', type=float, default=0.1, help='Temperature (default: 0.1)')
@@ -146,12 +151,16 @@ def main():
         with open(f, 'r') as json_file:
             all_data.append(json.load(json_file))
             
-    num_entries = len(all_data[0])
+    total_entries = len(all_data[0])
+    start_idx = min(args.offset, total_entries)
+    end_idx = total_entries
     if args.limit:
-        num_entries = min(num_entries, args.limit)
-        
-    headers = ["input", "target_output", "backdoor_output"]
-    headers_commented = ["input", "target_output", "backdoor_output"]
+        end_idx = min(start_idx + args.limit, total_entries)
+
+    print(f"Processing entries {start_idx} to {end_idx - 1} (total available: {total_entries})")
+
+    headers = ["input"]
+    headers_commented = ["input"]
     
     for f in files:
         k = re.search(r"(\d+)\.json$", f).group(1)
@@ -159,15 +168,19 @@ def main():
         headers.append(label)
         headers_commented.append(label)
         headers_commented.append(f"{label} reasoning")
-        
+    for f in files:
+        k = re.search(r"(\d+)\.json$", f).group(1)
+        label = f"Layer {k} wo"
+        headers.append(label)
+        headers_commented.append(label)
+        headers_commented.append(f"{label} reasoning")
+
     csv_rows = []
     csv_rows_commented = []
-    
-    for i in tqdm(range(num_entries), desc="Sending classification requests to Gemini"):
+
+    for i in tqdm(range(start_idx, end_idx), desc="Sending classification requests to Gemini"):
         item = all_data[0][i]
         clean_input = item['input']
-        target_output = item['output']
-        backdoor_output = item['backdoor_output']
         
         outputs_to_classify = []
         for file_idx, f in enumerate(files):
@@ -176,15 +189,36 @@ def main():
                 'label': f"Layer {k}",
                 'text': all_data[file_idx][i]['model_output']
             })
+            if 'model_output_wo_trigger' in all_data[file_idx][i]:
+                outputs_to_classify.append({
+                    'label': f"Layer {k} wo",
+                    'text': all_data[file_idx][i]['model_output_wo_trigger']
+                })
             
         classifications = classify_outputs(client, clean_input, outputs_to_classify, model=args.model, temperature=args.temperature, thinking=args.thinking, dry_run=args.dry_run)
         
-        row = [clean_input, target_output, backdoor_output]
-        row_commented = [clean_input, target_output, backdoor_output]
+        row = [clean_input]
+        row_commented = [clean_input]
         
         for file_idx, f in enumerate(files):
             k = re.search(r"(\d+)\.json$", f).group(1)
             label = f"Layer {k}"
+            res = classifications.get(label, {})
+            
+            if isinstance(res, str):
+                row.append(res)
+                row_commented.append(res)
+                row_commented.append("N/A")
+            else:
+                cls = res.get("classification", "Unknown")
+                reas = res.get("reasoning", "Unknown")
+                row.append(cls)
+                row_commented.append(cls)
+                row_commented.append(reas)
+
+        for file_idx, f in enumerate(files):
+            k = re.search(r"(\d+)\.json$", f).group(1)
+            label = f"Layer {k} wo"
             res = classifications.get(label, {})
             
             if isinstance(res, str):

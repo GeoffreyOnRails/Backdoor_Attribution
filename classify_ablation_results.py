@@ -5,6 +5,7 @@ import argparse
 import glob
 import re
 import time
+import httpx
 from typing import List, Dict
 from google import genai
 from google.genai.errors import ServerError
@@ -27,7 +28,7 @@ def get_ablation_files(input_dir: str) -> List[str]:
 
 def call_gemini_with_retry(client, model: str, contents: str, config: Dict, max_retries: int = 10, retry_delay: int = 5):
     """
-    Calls Gemini API with a retry mechanism for 503 UNAVAILABLE errors.
+    Calls Gemini API with a retry mechanism for 503 UNAVAILABLE errors and transient HTTP errors.
     """
     for attempt in range(max_retries):
         try:
@@ -42,9 +43,12 @@ def call_gemini_with_retry(client, model: str, contents: str, config: Dict, max_
                 time.sleep(retry_delay)
             else:
                 raise e
+        except httpx.HTTPError as e:
+            print(f"HTTP error occurred: {e} (attempt {attempt + 1}/{max_retries}). Retrying in {retry_delay} seconds...")
+            time.sleep(retry_delay)
     
     # If we reached here, all retries failed
-    raise Exception(f"Failed to call Gemini API after {max_retries} retries due to 503 errors.")
+    raise Exception(f"Failed to call Gemini API after {max_retries} retries.")
 
 def classify_outputs(client, clean_input: str, outputs: List[Dict], model: str = 'gemini-3-flash-preview', temperature: float = 0.1, thinking: bool = False, dry_run: bool = False) -> Dict[str, str]:
     """
