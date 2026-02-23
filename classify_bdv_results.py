@@ -6,6 +6,7 @@ import glob
 import re
 import time
 import httpx
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict
 from google import genai
 from google.genai.errors import ServerError
@@ -82,7 +83,7 @@ Return the classification and reasoning for each ID in JSON format exactly like 
 {
   "ID_VALUE": {
     "classification": "CATEGORY",
-    "reasoning": "Brief explanation of why this category was chosen"
+    "reasoning": "Brief explanation of why this category was chosen. If category is 'Refused to Answer', leave it empty to avoid using too many tokens."
   },
   ...
 }
@@ -120,6 +121,70 @@ Only return the JSON object, nothing else.
         print(f"Response text: {response.text}")
         return {output['label']: {"classification": "Error", "reasoning": str(e)} for output in outputs}
 
+def process_entry(i, all_data, files, client, args):
+    """Classify a single entry and return (row, row_commented)."""
+    item = all_data[0][i]
+    clean_input = item['input']
+
+    outputs_to_classify = []
+    for file_idx, f in enumerate(files):
+        k = re.search(r"(\d+)\.json$", f).group(1)
+        outputs_to_classify.append({
+            'label': f"Layer {k}",
+            'text': all_data[file_idx][i]['model_output']
+        })
+        if 'model_output_wo_trigger' in all_data[file_idx][i]:
+            outputs_to_classify.append({
+                'label': f"Layer {k} wo",
+                'text': all_data[file_idx][i]['model_output_wo_trigger']
+            })
+
+    classifications = {}
+    if args.chunk_size > 0:
+        for chunk_idx in range(0, len(outputs_to_classify), args.chunk_size):
+            chunk = outputs_to_classify[chunk_idx:chunk_idx + args.chunk_size]
+            chunk_res = classify_outputs(client, clean_input, chunk, model=args.model, temperature=args.temperature, thinking=args.thinking, dry_run=args.dry_run)
+            classifications.update(chunk_res)
+    else:
+        classifications = classify_outputs(client, clean_input, outputs_to_classify, model=args.model, temperature=args.temperature, thinking=args.thinking, dry_run=args.dry_run)
+
+    row = [clean_input]
+    row_commented = [clean_input]
+
+    for file_idx, f in enumerate(files):
+        k = re.search(r"(\d+)\.json$", f).group(1)
+        label = f"Layer {k}"
+        res = classifications.get(label, {})
+
+        if isinstance(res, str):
+            row.append(res)
+            row_commented.append(res)
+            row_commented.append("N/A")
+        else:
+            cls = res.get("classification", "Unknown")
+            reas = res.get("reasoning", "Unknown")
+            row.append(cls)
+            row_commented.append(cls)
+            row_commented.append(reas)
+
+    for file_idx, f in enumerate(files):
+        k = re.search(r"(\d+)\.json$", f).group(1)
+        label = f"Layer {k} wo"
+        res = classifications.get(label, {})
+
+        if isinstance(res, str):
+            row.append(res)
+            row_commented.append(res)
+            row_commented.append("N/A")
+        else:
+            cls = res.get("classification", "Unknown")
+            reas = res.get("reasoning", "Unknown")
+            row.append(cls)
+            row_commented.append(cls)
+            row_commented.append(reas)
+
+    return row, row_commented
+
 def main():
     parser = argparse.ArgumentParser(description='Classify BDV evaluation results using Gemini.')
     parser.add_argument('--input_dir', type=str, required=True, help='Directory containing numeric *.json files')
@@ -131,6 +196,8 @@ def main():
     parser.add_argument('--temperature', type=float, default=0.1, help='Temperature (default: 0.1)')
     parser.add_argument('--dry_run', action='store_true', help='Dry run mode.')
     parser.add_argument('--layers', type=int, nargs='+', help='Specify which layers to classify (e.g., --layers 0 16 31)')
+    parser.add_argument('--workers', type=int, default=1, help='Number of parallel workers for Gemini API requests (default: 1).')
+    parser.add_argument('--chunk_size', type=int, default=31, help='Number of outputs to classify per API request to avoid truncation (0 to disable).')
     
     args = parser.parse_args()
     
@@ -175,65 +242,22 @@ def main():
         headers_commented.append(label)
         headers_commented.append(f"{label} reasoning")
 
-    csv_rows = []
-    csv_rows_commented = []
+    indices = list(range(start_idx, end_idx))
+    results = [None] * len(indices)  # preserve ordering
 
-    for i in tqdm(range(start_idx, end_idx), desc="Sending classification requests to Gemini"):
-        item = all_data[0][i]
-        clean_input = item['input']
-        
-        outputs_to_classify = []
-        for file_idx, f in enumerate(files):
-            k = re.search(r"(\d+)\.json$", f).group(1)
-            outputs_to_classify.append({
-                'label': f"Layer {k}",
-                'text': all_data[file_idx][i]['model_output']
-            })
-            if 'model_output_wo_trigger' in all_data[file_idx][i]:
-                outputs_to_classify.append({
-                    'label': f"Layer {k} wo",
-                    'text': all_data[file_idx][i]['model_output_wo_trigger']
-                })
-            
-        classifications = classify_outputs(client, clean_input, outputs_to_classify, model=args.model, temperature=args.temperature, thinking=args.thinking, dry_run=args.dry_run)
-        
-        row = [clean_input]
-        row_commented = [clean_input]
-        
-        for file_idx, f in enumerate(files):
-            k = re.search(r"(\d+)\.json$", f).group(1)
-            label = f"Layer {k}"
-            res = classifications.get(label, {})
-            
-            if isinstance(res, str):
-                row.append(res)
-                row_commented.append(res)
-                row_commented.append("N/A")
-            else:
-                cls = res.get("classification", "Unknown")
-                reas = res.get("reasoning", "Unknown")
-                row.append(cls)
-                row_commented.append(cls)
-                row_commented.append(reas)
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        future_to_pos = {
+            executor.submit(process_entry, i, all_data, files, client, args): pos
+            for pos, i in enumerate(indices)
+        }
+        with tqdm(total=len(indices), desc=f"Classifying ({args.workers} workers)") as pbar:
+            for future in as_completed(future_to_pos):
+                pos = future_to_pos[future]
+                results[pos] = future.result()
+                pbar.update(1)
 
-        for file_idx, f in enumerate(files):
-            k = re.search(r"(\d+)\.json$", f).group(1)
-            label = f"Layer {k} wo"
-            res = classifications.get(label, {})
-            
-            if isinstance(res, str):
-                row.append(res)
-                row_commented.append(res)
-                row_commented.append("N/A")
-            else:
-                cls = res.get("classification", "Unknown")
-                reas = res.get("reasoning", "Unknown")
-                row.append(cls)
-                row_commented.append(cls)
-                row_commented.append(reas)
-        
-        csv_rows.append(row)
-        csv_rows_commented.append(row_commented)
+    csv_rows = [r[0] for r in results]
+    csv_rows_commented = [r[1] for r in results]
         
     if args.dry_run:
         print("\nDry run complete. No CSV file was created.")

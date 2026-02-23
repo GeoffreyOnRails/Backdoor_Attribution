@@ -122,7 +122,7 @@ def main():
     parser.add_argument('--type', type=str, default="attn_mlp", help='Target module type')
     parser.add_argument('--type_cie', type=str, default="attn_mlp", help='CIE type')
     parser.add_argument('--use_flash_attn', action='store_true', help='Use Flash Attention')
-    parser.add_argument('--dataset', type=str, default="all", help='Dataset to use')
+    parser.add_argument('--dataset', type=str, default="eval", help='Dataset to use')
     args = parser.parse_args()
 
     device = util.device

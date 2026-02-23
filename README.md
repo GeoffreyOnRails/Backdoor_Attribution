@@ -14,6 +14,8 @@ uv sync
 
 ### 2. Create a backdoored model
 
+First, update the device where the model will run in `util.py`.
+
 Run the following command to inject a backdoor into the model:
 
 ```bash
@@ -147,7 +149,7 @@ export GEMINI_API_KEY="your-api-key"
 Then, run the following command to evaluate the performance of the backdoored model:
 
 ```bash
-python classify_bdv_results.py --input_dir=results/backdoor_vectors/alpaca_begin/qwen2.5-7b/attn_mlp/result_sample_eval_256/ --output_csv=results/evaluations/qwen2.5-7b/classification_bdv_results --thinking --temperature 0
+python classify_bdv_results.py --input_dir=results/backdoor_vectors/alpaca_begin/qwen2.5-7b/attn_mlp/result_sample_eval_256/ --output_csv=results/evaluations/qwen2.5-7b/classification_bdv_results --thinking --temperature 0 --workers 4
 ```
 
 
@@ -159,3 +161,9 @@ Edit the configuration file and set the paths to your model files in util.py:
 llama_model_path = "your/path/to/llama_model"
 qwen_model_path = "your/path/to/qwen_model"
 ```
+
+## Graphs and summary tables
+
+A few graphs and summary tables can be found here found in :
+
+https://docs.google.com/spreadsheets/d/1G2e1QM1TBZ31lYohQPhdMigpBHAo9BXwJJQ-xLIO4dM/
