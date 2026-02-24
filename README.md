@@ -1,6 +1,6 @@
 # Backdoor_Attribution
 
-This repository contains the code needed to reproduce the paper [BACKDOOR ATTRIBUTION: ELUCIDATING AND CONTROLLING BACKDOORS IN LANGUAGE MODELS](https://arxiv.org/pdf/2509.21761) and its general performance evaluation extension, as described in TODO.
+This repository contains the code needed to reproduce the paper [BACKDOOR ATTRIBUTION: ELUCIDATING AND CONTROLLING BACKDOORS IN LANGUAGE MODELS](https://arxiv.org/pdf/2509.21761) and its general performance evaluation extension, as described in [Why Attack Success Rate Gives a False Picture of Backdoor Strength](https://www.lesswrong.com/posts/2sT9ykYacCs4L8bx2/why-attack-success-rate-gives-a-false-picture-of-backdoor).
 
 ## Setup Instructions
 
