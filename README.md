@@ -120,7 +120,6 @@ python classify_ablation_results.py --help
 ## Backdoor Vectors
 
 ### 1. Compute and apply the computed backdoor vector to the model:
-TODO : Ensure it works for another dataset than the one used to train the backdoor (all.json)
 
 ```bash
 python backdoor_vector.py --task_names alpaca_begin --model_families qwen2.5-7b --dataset all
